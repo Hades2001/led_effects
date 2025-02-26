@@ -1,3 +1,7 @@
+# ESP-IDF LED Effects Project
+
+This project is an ESP-IDF 5.1-based LED effects system that provides multiple LED animation modes, including static colors, rainbow flow, progress bars, breathing effects, audio-responsive lighting, flashing, and glitch effects. The system is designed for RGB LED strips controlled via the ESP-IDF framework and utilizes RMT (Remote Control) peripherals for efficient LED control.
+
 ### **LED 灯光控制函数的 `_parm_i` 和 `_parm_d` 参数表格**
 
 
