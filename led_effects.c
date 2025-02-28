@@ -28,8 +28,9 @@ bool led_breathe(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i);
 bool led_progressbar(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i);
 bool led_flash(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i);
 bool led_glitch(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i);
+bool led_symmetric_motion(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i);
 
-leds_am_fun funlist[mMAX] = {
+leds_am_fun funlist[kLEDC_MAX] = {
     NULL,
     led_static,
     led_listen,
@@ -39,6 +40,7 @@ leds_am_fun funlist[mMAX] = {
     led_breathe,
     led_flash,
     led_glitch,
+    led_symmetric_motion,
 };
 
 typedef struct led_am {
@@ -49,7 +51,7 @@ typedef struct led_am {
     color_t temp_color[LED_NUMBERS];
     double  parm_d[8];
     int     parm_i[8];
-    int     amcnt;
+    int64_t amcnt;
     QueueHandle_t msg_queue;
     leds_am_fun fun;
 }led_am_t;
@@ -142,6 +144,24 @@ void cala_listen_parm(double max_x,double max_t,int n_x,int n_t,double* _parm_d,
     _parm_d[7] = fx_t;
 }
 
+double gcd(double a, double b) {
+    while (fabs(b) > 1e-6) {  // 允许微小误差
+        double temp = b;
+        b = fmod(a, b);
+        a = temp;
+    }
+    return a;
+}
+
+void calaparm(double* _parm_d){
+    double T_phi = 2.0 * PI / _parm_d[0];  // 计算 phi_t 的周期
+    double T_theta = 2.0 * PI / _parm_d[1]; // 计算 theta_t 的周期
+    // 使用近似方法计算最小公倍周期
+    double T_total = (T_phi * T_theta) / gcd(T_phi, T_theta); 
+    // 更新参数 _parm_d[7] 作为 LED 颜色变化周期
+    _parm_d[7] = T_total / _parm_d[5];
+}
+
 /**
  * @brief  静态单色模式
  * @param ledbuff  LED 颜色缓冲区 (HSV 格式)
@@ -169,18 +189,21 @@ bool led_static(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
  * @param _parm_d  (未使用)
  * @param _parm_i  参数数组：
  *                 _parm_i[0] - 起始色相 (0~359)
- *                 _parm_i[1] - LED 之间的色相步长
- *                 _parm_i[2] - 彩虹流动速度
+ *                 _parm_i[1] - 饱和度（0-99）
+ *                 _parm_i[2] - 亮度 (0~99)
+ *                 _parm_i[3] - LED 之间的色相步长
+ *                 _parm_i[4] - 彩虹流动速度
+ *                  
  * @return true    是否为连续动画
  */
 bool led_rainbow(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
-    int hue_start = (_parm_i[0] + cnt * _parm_i[2]) % 360;
-    int hue_step = _parm_i[1];
+    int hue_start = (_parm_i[0] + cnt * _parm_i[4]) % 360;
+    int hue_step = _parm_i[3];
 
     for (int j = 0; j < LED_NUMBERS; j++) {
         ledbuff[j].h = (hue_start + j * hue_step) % 360;
-        ledbuff[j].s = 100;
-        ledbuff[j].v = 20;
+        ledbuff[j].s = _parm_i[1] % 100;
+        ledbuff[j].v = _parm_i[2] % 100;
     }
     return true;
 }
@@ -196,6 +219,7 @@ bool led_rainbow(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
  *                 _parm_i[0] - 目标进度百分比 (0~100)
  *                 _parm_i[1] - 进度条前景色 (0~359)
  *                 _parm_i[2] - 进度条背景色 (0~359)
+ *                 _parm_i[3] - 整体亮度 (0~99)
  * @return false   是否为连续动画
  */
 bool led_progressbar(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
@@ -222,7 +246,7 @@ bool led_progressbar(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
         
         ledbuff[j].h = hue;
         ledbuff[j].s = 100;
-        ledbuff[j].v = 20;
+        ledbuff[j].v = _parm_i[3];
     }
     return false;
 }
@@ -232,12 +256,15 @@ bool led_progressbar(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
  * @param ledbuff  LED 颜色缓冲区
  * @param cnt      运行计数器 (影响颜色变化)
  * @param _parm_d  参数数组：
+ *                 _parm_d[0] - omega_phi
+ *                 _parm_d[1] - omega_theta
  *                 _parm_d[5] - 时间步长
  *                 _parm_d[6] - x 轴步长
  *                 _parm_d[7] - 颜色变化周期
  * @param _parm_i  参数数组：
  *                 _parm_i[0] - 基础色相
  *                 _parm_i[1] - 颜色变化幅度
+ *                 _parm_i[2] - 整体亮度 (0~99)
  * @return true    是否为连续动画
  */
 bool led_listen(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
@@ -245,15 +272,15 @@ bool led_listen(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
     double L1_t = 10 + 5 * sin(t);
     double L2_t = 20 - L1_t;
 
-    double phi_t = 2 * PI * sin(0.5 * t);
-    double theta_t = 2 * PI * sin(1.0 * t + PI / 2.0);
+    double phi_t = 2 * PI * sin(_parm_d[0] * t);
+    double theta_t = 2 * PI * sin(_parm_d[1] * t + PI / 2.0);
 
     for (int j = 0; j < LED_NUMBERS; j++) {
         double x = j * _parm_d[6];
         double result = sin(2 * PI * x / L1_t + phi_t) + sin(2 * PI * x / L2_t + theta_t);
         ledbuff[j].h = _parm_i[0] + _parm_i[1] * result;
         ledbuff[j].s = 100;
-        ledbuff[j].v = 20;
+        ledbuff[j].v = _parm_i[2];
     }
     return true;
 }
@@ -269,6 +296,8 @@ bool led_listen(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
  *                  _parm_d[2] - parm_c：控制衰减速率 (建议 300~600)
  * @param _parm_i  参数数组
  *                  _parm_i[0] - 色相 (0~359)
+ *                  _parm_i[1] - 饱和度 (0~99)
+ *                  _parm_i[2] - 亮度 (0~99)
  * @return true    执行成功
  */
 bool led_breathe(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
@@ -278,13 +307,13 @@ bool led_breathe(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
     double parm_c = _parm_d[2]; // 控制衰减速率
 
     // 计算呼吸灯亮度
-    uint8_t led_v = parm_a * exp(-(pow((cnt % 100) - parm_b, 2.0) / parm_c));
+    uint8_t led_v = parm_a * exp(-(pow((cnt % 100) - parm_b, 2.0) / parm_c))*_parm_i[2] / 100;
 
     // 设置 LED 颜色
     for (int j = 0; j < LED_NUMBERS; j++) {
-        ledbuff[j].h = _parm_i[0] % 360;  // 色相
-        ledbuff[j].s = 100;               // 饱和度固定
-        ledbuff[j].v = led_v;             // 计算出的亮度
+        ledbuff[j].h = _parm_i[0] % 360;        // 色相
+        ledbuff[j].s = _parm_i[1];              // 饱和度
+        ledbuff[j].v = led_v;                   // 计算出的亮度
     }
     return true;
 }
@@ -300,21 +329,33 @@ bool led_breathe(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
  * @param _parm_i  参数数组：
  *                 _parm_i[0] - 起始色相
  *                 _parm_i[1] - 目标色相
+ *                 _parm_i[2] - 饱和度 (0~99)
+ *                 _parm_i[3] - 亮度 (0~99)
  * @return true    是否为连续动画
  */
 bool led_breathe_2c(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
     if (cnt < 0) return true;
 
-    double parm_a = _parm_d[0];
-    double parm_b = _parm_d[1];
-    double parm_c = _parm_d[2];
+    //double parm_a = _parm_d[0];  // 最大亮度
+    double parm_b = _parm_d[1];  // 峰值时间
+    double parm_c = _parm_d[2];  // 亮度变化平滑参数
 
-    double result = parm_a + (_parm_i[1] - _parm_i[0]) * exp(-(pow((cnt % 100) - parm_b, 2.0) / parm_c));
+    // 计算呼吸灯的亮度
+    double brightness_factor = exp(-(pow((cnt % 100) - parm_b, 2.0) / parm_c));
+    //uint8_t brightness = (uint8_t)(parm_a * brightness_factor); // 亮度随指数变化
+
+    // 计算色相过渡，使用最短路径算法
+    int hue_start = _parm_i[0];  // 起始色相
+    int hue_end = _parm_i[1];    // 目标色相
+
+    // 计算色相的最短路径
+    int hue_delta = ((hue_end - hue_start + 540) % 360) - 180;
+    double hue = hue_start + hue_delta * brightness_factor; // 按指数曲线过渡色相
 
     for (int j = 0; j < LED_NUMBERS; j++) {
-        ledbuff[j].h = ((int)result) % 360;
-        ledbuff[j].s = 100;
-        ledbuff[j].v = 20;
+        ledbuff[j].h = ((int)hue) % 360;  // 确保色相在 0~359 之间
+        ledbuff[j].s = _parm_i[2];        // 设定饱和度
+        ledbuff[j].v = _parm_i[3];        // 设定亮度
     }
     return true;
 }
@@ -326,18 +367,22 @@ bool led_breathe_2c(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
  * @param ledbuff  LED 颜色缓冲区
  * @param cnt      运行计数器 (用于控制闪烁)
  * @param _parm_d  (未使用)
- * @param _parm_i  _parm_i[0] - 色相, _parm_i[1] - 闪烁周期 (帧数)
+ * @param _parm_i  _parm_i[0] - 色相
+ *                 _parm_i[1] - 饱和度
+ *                 _parm_i[2] - 亮度
+ *                 _parm_i[3] - 闪烁周期 (帧数)
+ *
  * @return true    是否为连续动画
  */
 bool led_flash(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
-    int flash_interval = _parm_i[1]; 
+    int flash_interval = _parm_i[3]; 
     bool is_on = (cnt / flash_interval) % 2;
 
     for (int j = 0; j < LED_NUMBERS; j++) {
         if (!is_on) {
             ledbuff[j].h = _parm_i[0] % 360;
-            ledbuff[j].s = 100;
-            ledbuff[j].v = 20;
+            ledbuff[j].s = _parm_i[1];
+            ledbuff[j].v = _parm_i[2];
         } else {
             ledbuff[j].h = 0;
             ledbuff[j].s = 0;
@@ -388,6 +433,58 @@ bool led_glitch(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
 
     return true;
 }
+
+/**
+ * @brief  中心对称光点循环运动 LED 效果
+ *         光点从中心向边界运动，到达边界后返回中心，并在背景色上平滑过渡。
+ * 
+ * @param ledbuff  LED 颜色缓冲区 (HSV 格式)
+ * @param cnt      运行计数器 (影响光点位置)
+ * @param _parm_d  参数数组 (控制运动和色相平滑)
+ *                 _parm_d[0] - 光点运动速度 (建议 0.01~0.1，较小值 = 运动慢，较大值 = 运动快)
+ *                 _parm_d[1] - 颜色过渡平滑范围 σ (建议 2.0~5.0，较小值 = 颜色变化锐利，较大值 = 颜色渐变柔和)
+ * @param _parm_i  参数数组 (控制光点和背景颜色)
+ *                 _parm_i[0] - 光点色相 (0~359)
+ *                 _parm_i[1] - 背景色相 (0~359)
+ *                 _parm_i[2] - 饱和度
+ *                 _parm_i[3] - 亮度
+ * @return true    是否为连续动画 (始终返回 true)
+ */
+bool led_symmetric_motion(color_t *ledbuff, int cnt, double* _parm_d, int* _parm_i) {
+    // 解析参数
+    int fg_hue = _parm_i[0] % 360;  // 光点色相
+    int bg_hue = _parm_i[1] % 360;  // 背景色相
+    double speed = _parm_d[0];      // 运动速度
+    double sigma = _parm_d[1];      // 颜色平滑过渡范围（标准差）
+
+    // 计算时间步长和光点位置
+    double t = cnt * speed;
+    double pos = fabs(sin(t)) * (LED_NUMBERS / 2);  // 计算光点位置
+    int center = LED_NUMBERS / 2;
+    
+    int left_index = center - (int)pos;
+    int right_index = center + (int)pos;
+
+    // 遍历所有 LED 进行色相插值计算
+    for (int j = 0; j < LED_NUMBERS; j++) {
+        // 计算该 LED 到左右光点的最小距离
+        double dist_to_left = fabs(j - left_index);
+        double dist_to_right = fabs(j - right_index);
+        double min_dist = fmin(dist_to_left, dist_to_right);
+
+        // 使用高斯曲线计算影响力（越接近光点，影响越大）
+        double influence = exp(-pow(min_dist, 2) / (2 * pow(sigma, 2)));
+
+        // 计算最终色相（平滑插值）
+        double hue = (bg_hue * (1 - influence) + fg_hue * influence);
+        
+        ledbuff[j].h = ((int)hue) % 360;
+        ledbuff[j].s = _parm_i[2];
+        ledbuff[j].v = _parm_i[3]; // 亮度也进行平滑过渡
+    }
+    return true;
+}
+
 
 /**
  * @brief  计算渐变动画的步长 (支持 色相、饱和度、亮度)
@@ -490,8 +587,8 @@ static void led_loop_task(void *arg)
 
     for (int i = 0; i < LED_NUMBERS; i++)
     {
-        leds.hsv[i].h = 120;
-        leds.hsv[i].s = 100;
+        leds.hsv[i].h = 0;
+        leds.hsv[i].s = 99;
         leds.hsv[i].v = 0;
     }
 
@@ -504,19 +601,22 @@ static void led_loop_task(void *arg)
     while (1) {
         if (xQueueReceive(leds.msg_queue, &(msg), (TickType_t)1))
         {
-            if(msg.type != leds.now){
+            if((msg.type != leds.now)||(msg.update)){
                 leds.amcnt = -( am_time );
                 leds.now = msg.type;
                 leds.fun = funlist[msg.type];
                 if(leds.fun == NULL) continue;
+                memcpy(leds.parm_d,msg.parm_d,sizeof(double)*8);
+                memcpy(leds.parm_i,msg.parm_i,sizeof(int)*8);
                 leds.fun(leds.temp_color,0,leds.parm_d,leds.parm_i);
                 cala_am_hstep(leds.hsv,leds.temp_color,leds.temporary,leds.hvstep);
+                //ESP_LOGI(TAG,"LEDs-AM set type to %d,%d",leds.now,leds.amcnt);
             }
             iscontinue = true;
             memcpy(leds.parm_d,msg.parm_d,sizeof(double)*8);
             memcpy(leds.parm_i,msg.parm_i,sizeof(int)*8);
         }
-        if(!iscontinue){
+        if(iscontinue){
             if( leds.amcnt <= 0 ){
                 led_smooth_am(leds.hsv,am_time + leds.amcnt,leds.temporary,leds.hvstep);
             }
