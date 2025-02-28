@@ -63,10 +63,10 @@ typedef enum {
 
 
 const leds_ctrl_msg_t _g_led_ctrl[kDEVLED_MAX] = {
-    {kLEDC_FLASH,       -1, 2, true,  {0, 99, 30, 5, 0, 0, 0, 0},      {0}},                                                //-kDEVLED_NOT_CONFIGURED
+    {kLEDC_LISTEN,      -1, 2, true,  {15, 10, 30, 0, 0, 0, 0, 0},     {0.5, 1.0, 0, 0, 0, 0.013333, 0.25, 942.501359}},    //-kDEVLED_NOT_CONFIGURED
     {kLEDC_BREATHE,     -1, 2, true,  {0, 99, 30, 0, 0, 0, 0, 0},      {80, 50, 300, 0, 0, 0, 0, 0}},                       //-kDEVLED_WIFI_FAILED
-    {kLEDC_BREATHE,     -1, 2, true,  {0, 99, 30, 0, 0, 0, 0, 0},      {80, 50, 300, 0, 0, 0, 0, 0}},                       //-kDEVLED_SERVER_FAILED
-    {kLEDC_STATIC,      -1, 2, true,  {20, 99, 30, 0, 0, 0, 0, 0},     {0}},                                                //-kDEVLED_HARDWARE_ERROR
+    {kLEDC_BREATHE,     -1, 2, true,  {20, 99, 30, 0, 0, 0, 0, 0},     {80, 50, 300, 0, 0, 0, 0, 0}},                       //-kDEVLED_SERVER_FAILED
+    {kLEDC_GLITCH,      -1, 2, true,  {10, 100, 1, 50, 0, 0, 0, 0},    {0}},                                                //-kDEVLED_HARDWARE_ERROR
     {kLEDC_BREATH_2C,   -1, 3, true,  {0, 20, 99, 30, 0, 0, 0, 0},     {10, 50, 800, 0, 0, 0, 0, 0}},                       //-kDEVLED_LOW_BATTERY
     {KLEDC_SYSMOTION,   -1, 3, true,  {0, 50, 99, 30, 0, 0, 0, 0},     {0.08, 3, 0, 0, 0, 0, 0,0}},                         //-kDEVLED_WAIT_NETWORK
     {kLEDC_LISTEN,      -1, 2, true,  {90, 25, 30, 0, 0, 0, 0, 0},     {0.5, 1.0, 0, 0, 0, 0.013333, 0.25, 942.501359}},    //-kDEVLED_WAIT_WAKEUP
@@ -109,7 +109,7 @@ void app_main(void)
         ESP_LOGI("MAIN","Is now %d",i);
         i++;
         i = ( i >= kDEVLED_MAX ) ? kDEVLED_NOT_CONFIGURED : i;
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 
     while (1) {
