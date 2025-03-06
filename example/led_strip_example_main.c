@@ -58,6 +58,7 @@ typedef enum {
     kDEVLED_READING_RFID,        // 读取 RFID
     kDEVLED_APPLYING_SETTINGS,   // 正在应用设置
     kDEVLED_OTA_UPDATING,        // OTA 更新中
+    kDEVLED_CLOSED,              // 关机
     kDEVLED_MAX,                 // 最大模式数 (用于边界检查)
 } kDEVLED_Status_t;
 
@@ -77,6 +78,7 @@ const leds_ctrl_msg_t _g_led_ctrl[kDEVLED_MAX] = {
     {KLEDC_SYSMOTION,   -1, 3, true,  {350, 269, 99, 30, 0, 0, 0, 0},  {0.08, 2, 0, 0, 0, 0, 0,0}},                         //kDEVLED_READING_RFID
     {KLEDC_SYSMOTION,   -1, 3, true,  {252, 296, 99, 30, 0, 0, 0, 0},  {0.08, 3, 0, 0, 0, 0, 0,0}},                         //kDEVLED_APPLYING_SETTINGS
     {kLEDC_PROGRESS_BAR, 0, 3, false, {50, 100, 200, 30, 0, 0, 0, 0},  {2.5, 0, 0, 0, 0, 0, 0, 0}},                         //kDEVLED_OTA_UPDATING
+    {kDEVLED_CLOSED,    -1,-1, true,  {0, 99, 0, 0, 0, 0, 0, 0},       {0}},                                                //kDEVLED_CLOSED
 };
 
 void set_led_state(QueueHandle_t msg_queue,int state,int value,int light){
